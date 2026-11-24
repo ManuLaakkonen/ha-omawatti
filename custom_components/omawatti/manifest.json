@@ -1,0 +1,12 @@
+{
+  "domain": "omawatti",
+  "name": "OmaWatti (Lahti Energia)",
+  "codeowners": ["@ManuLaakkonen"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/ManuLaakkonen/ha-omawatti",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/ManuLaakkonen/ha-omawatti/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

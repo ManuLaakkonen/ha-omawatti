@@ -1,0 +1,22 @@
+import_history:
+  name: Tuo historiatiedot (backfill)
+  description: >-
+    Hakee OmaWatista tuntihistorian annetusta alkupäivästä tähän päivään asti
+    vuosierissä ja rakentaa yhtenäisen kumulatiivisen tilastohistorian ilman
+    vuodenvaihteen piikkejä (esim. vertailuvuodet 2024–2025).
+  fields:
+    start_date:
+      name: Alkupäivämäärä
+      description: Päivämäärä, josta alkaen historia tuodaan (esim. 2025-01-01 tai 2024-01-01).
+      required: true
+      example: "2025-01-01"
+      selector:
+        date: {}
+    metering_point:
+      name: Käyttöpaikkatunnus (valinnainen)
+      description: >-
+        Jätä tyhjäksi tuodaksesi kaikkien valittujen mittarien historian, tai
+        rajaa yksittäiseen käyttöpaikkatunnukseen.
+      required: false
+      selector:
+        text: {}

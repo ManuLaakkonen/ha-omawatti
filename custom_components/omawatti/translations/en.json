@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OmaWatti (Lahti Energia)",
+        "description": "Sign in with your OmaWatti credentials. They are stored in Home Assistant's config entries.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "contracts": {
+        "title": "Select metering points",
+        "description": "Choose which active electricity and district heating meters to track, and the initial history start date.",
+        "data": {
+          "contracts": "Active metering points",
+          "initial_start_date": "Initial history start date"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate OmaWatti",
+        "description": "Your OmaWatti credentials need to be updated.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "cannot_connect": "Failed to connect to OmaWatti. Please try again later.",
+      "no_contracts": "No active electricity or district heating contracts found on this account.",
+      "select_at_least_one": "Select at least one metering point.",
+      "invalid_date": "Invalid date (expected YYYY-MM-DD).",
+      "future_date": "Start date cannot be in the future.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This OmaWatti customer account is already configured.",
+      "reauth_successful": "OmaWatti credentials updated."
+    }
+  }
+}

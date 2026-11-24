@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OmaWatti (Lahti Energia)",
+        "description": "Kirjaudu OmaWatti-tunnuksillasi. Tunnukset tallennetaan Home Assistantin suojattuun asetustietokantaan.",
+        "data": {
+          "username": "Käyttäjätunnus",
+          "password": "Salasana"
+        }
+      },
+      "contracts": {
+        "title": "Valitse seurattavat käyttöpaikat",
+        "description": "Valitse mittarit, joiden kulutus- ja lämpötilahistoria tuodaan Home Assistantiin, sekä ensituonnin alkupäivämäärä.",
+        "data": {
+          "contracts": "Aktiiviset käyttöpaikat",
+          "initial_start_date": "Historian alkupäivä (ensituonti)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Päivitä OmaWatti-tunnukset",
+        "description": "OmaWatti-kirjautuminen vanheni tai epäonnistui. Syötä uudet tunnukset.",
+        "data": {
+          "username": "Käyttäjätunnus",
+          "password": "Salasana"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Virheellinen käyttäjätunnus tai salasana.",
+      "cannot_connect": "Yhteys OmaWatti-palveluun epäonnistui. Yritä hetken päästä uudelleen.",
+      "no_contracts": "Tililtä ei löytynyt yhtään aktiivista sähkö- tai kaukolämpösopimusta.",
+      "select_at_least_one": "Valitse vähintään yksi käyttöpaikka.",
+      "invalid_date": "Virheellinen päivämäärä (muoto VVVV-KK-PP).",
+      "future_date": "Alkupäivämäärä ei voi olla tulevaisuudessa.",
+      "unknown": "Odottamaton virhe."
+    },
+    "abort": {
+      "already_configured": "Tämä OmaWatti-asiakastili on jo määritetty.",
+      "reauth_successful": "OmaWatti-tunnukset päivitetty."
+    }
+  }
+}
