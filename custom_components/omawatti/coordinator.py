@@ -57,6 +57,7 @@ from .const import (
     ENDPOINT_HEAT_WATERFLOW,
     ENDPOINT_HEAT_WATERIN,
     ENDPOINT_HEAT_WATEROUT,
+    MIN_IMPORT_START_DATE,
     UPDATE_INTERVAL,
     USAGE_TYPE_ELECTRICITY,
     USAGE_TYPE_HEATING,
@@ -136,6 +137,10 @@ class OmaWattiCoordinator(DataUpdateCoordinator[dict[str, dict[str, MetricSummar
         today = dt_util.now().date()
         if start_date > today:
             raise ValueError(f"start_date {start_date} cannot be in the future")
+        if start_date < MIN_IMPORT_START_DATE:
+            raise ValueError(
+                f"start_date {start_date} cannot be earlier than {MIN_IMPORT_START_DATE}"
+            )
 
         target_contracts = [
             c

@@ -539,8 +539,12 @@ class OmaWattiClient:
     async def async_authenticate(self, *, force: bool = False) -> tuple[str, str]:
         """Authenticate against OmaWatti and cache the JWT token."""
         async with self._auth_lock:
-            if not force and self._token_is_valid():
-                assert self._token is not None and self._customer_number is not None
+            if (
+                not force
+                and self._token_is_valid()
+                and self._token is not None
+                and self._customer_number is not None
+            ):
                 return self._token, self._customer_number
 
             url = f"{self._base_url}/{ENDPOINT_AUTHENTICATE}"
@@ -565,14 +569,13 @@ class OmaWattiClient:
                                 f"Invalid OmaWatti credentials (HTTP {resp.status})"
                             )
                         if resp.status >= 400:
-                            text = await resp.text()
                             # OmaWatti may return 400/404 for unknown userID
                             if resp.status in (400, 404):
                                 raise OmaWattiAuthError(
                                     f"OmaWatti login rejected (HTTP {resp.status})"
                                 )
                             raise OmaWattiApiError(
-                                f"OmaWatti auth failed (HTTP {resp.status}): {text[:200]}"
+                                f"OmaWatti auth failed (HTTP {resp.status})"
                             )
                         body = await resp.json(content_type=None)
             except (OmaWattiAuthError, OmaWattiApiError):

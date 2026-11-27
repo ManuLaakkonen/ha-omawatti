@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 DOMAIN = "omawatti"
 
@@ -31,6 +31,7 @@ CONF_CITY = "city"
 CONF_PRODUCT = "product"
 
 DEFAULT_LOOKBACK_DAYS = 10
+MIN_IMPORT_START_DATE = date(2000, 1, 1)
 TOKEN_TTL_SECONDS = 3000  # Refresh proactively before 3600 s JWT expiry
 REQUEST_TIMEOUT_SECONDS = 60
 UPDATE_INTERVAL = timedelta(hours=6)

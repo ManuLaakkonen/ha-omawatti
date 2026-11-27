@@ -20,6 +20,7 @@ from .const import (
     CONF_CUSTOMER_NUMBER,
     CONF_INITIAL_START_DATE,
     DOMAIN,
+    MIN_IMPORT_START_DATE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,6 +115,8 @@ class OmaWattiConfigFlow(ConfigFlow, domain=DOMAIN):
                     parsed_start = date.fromisoformat(raw_start)
                     if parsed_start > date.today():
                         errors[CONF_INITIAL_START_DATE] = "future_date"
+                    elif parsed_start < MIN_IMPORT_START_DATE:
+                        errors[CONF_INITIAL_START_DATE] = "invalid_date"
                 except ValueError:
                     errors[CONF_INITIAL_START_DATE] = "invalid_date"
 

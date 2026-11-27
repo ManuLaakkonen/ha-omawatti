@@ -497,6 +497,17 @@ class TestOmaWattiClientAsync(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(api.OmaWattiAuthError):
             await client.async_authenticate()
 
+    async def test_auth_server_error_does_not_leak_response_body(self) -> None:
+        session = _FakeSession(
+            post_responses=[_FakeResponse(500, text="sensitive-backend-trace")],
+            get_responses=[],
+        )
+        client = api.OmaWattiClient(session, "demo", "pass")
+        with self.assertRaises(api.OmaWattiApiError) as ctx:
+            await client.async_authenticate()
+        self.assertIn("HTTP 500", str(ctx.exception))
+        self.assertNotIn("sensitive-backend-trace", str(ctx.exception))
+
     async def test_outage_503_raises_api_error(self) -> None:
         session = _FakeSession(
             post_responses=[
@@ -529,6 +540,8 @@ class TestIntegrationMetadataFiles(unittest.TestCase):
         self.assertEqual(manifest["domain"], "omawatti")
         self.assertTrue(manifest["config_flow"])
         self.assertIn("recorder", manifest["dependencies"])
+        self.assertEqual(manifest["requirements"], [])
+        self.assertEqual(const.MIN_IMPORT_START_DATE, date(2000, 1, 1))
 
 
 if __name__ == "__main__":

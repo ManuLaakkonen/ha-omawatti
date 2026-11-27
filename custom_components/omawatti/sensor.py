@@ -29,7 +29,6 @@ from .const import (
     CONF_USAGE_PLACE_TYPE,
     DOMAIN,
     USAGE_TYPE_ELECTRICITY,
-    USAGE_TYPE_HEATING,
 )
 from .coordinator import OmaWattiCoordinator, statistic_id_for
 

@@ -130,6 +130,15 @@ Voit ladata aiempien vuosien tuntihistorian kerta-ajona Energy Dashboardin vuosi
 
 ---
 
+## Tietoturva ja yksityisyys
+
+- **Ei ulkoisia riippuvuuksia:** Integraatio ei asenna kolmannen osapuolen Python-paketteja (`"requirements": []`), vaan käyttää suoraan Home Assistantin omaa `aiohttp`-asiakasta normaalilla TLS-varmennevalidoinnilla.
+- **Tunnusten säilytys:** OmaWatti-tunnukset tallennetaan vain Home Assistantin sisäiseen asetustietokantaan (ei `secrets.yaml`-tiedostoon, ei sensoriattribuutteihin eikä lokeihin). Bearer JWT -token pidetään vain keskusmuistissa.
+- **Kiinteä API-kohde & kirjautumissuoja:** Yhteys otetaan ainoastaan osoitteeseen `https://omawatti.lahtienergia.fi`. Virheellinen kirjautuminen pysäyttää taustahaun (`ConfigEntryAuthFailed`), jotta tili ei lukitu.
+- **Virheraportit:** Poista aina `customerNumber`, käyttöpaikkatunnus (GSRN), osoite ja JWT-token ennen lokien liittämistä julkiseen GitHub-issueen. Katso myös [SECURITY.md](SECURITY.md).
+
+---
+
 ## Kehitys ja testaus
 
 ```bash
@@ -143,5 +152,5 @@ python -m unittest discover -s tests -v
 Unofficial Home Assistant custom integration for **Lahti Energia OmaWatti** (Finland).
 
 - Imports **15-minute electricity consumption** (aggregated to UTC hourly `kWh`), **hourly district heating energy** (`MWh → kWh`), **water flow** (`m³`), **supply/return water temperatures** and **cooling ΔT** (`°C`) directly into Home Assistant **External Long-Term Statistics** (`StatisticMeanType` + `unit_class` compatible with HA `2025.11+` and `2026.11+`).
-- Zero external Python dependencies (`aiohttp` from HA Core), UI Config Flow with multi-meter discovery and re-auth, summary dashboard sensors, manual refresh button, and `omawatti.import_history` action for seamless multi-year historical backfills without year-boundary spikes.
+- Zero external Python dependencies (`aiohttp` from HA Core with TLS verification), hardcoded OmaWatti HTTPS origin, credentials stored only in HA Config Entry storage (in-memory JWT), UI Config Flow with multi-meter discovery and re-auth, summary dashboard sensors, manual refresh button, and `omawatti.import_history` action for seamless multi-year historical backfills without year-boundary spikes.
 - Install via **HACS → Custom repositories** (`https://github.com/ManuLaakkonen/ha-omawatti`, category *Integration*) and restart Home Assistant.
