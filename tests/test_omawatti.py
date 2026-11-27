@@ -169,7 +169,7 @@ class TestOmaWattiParsing(unittest.TestCase):
         self.assertIn("Testitie 1, Lahti (…0001)", ele[0].ui_label)
 
     def test_aggregate_quarterly_to_hourly_filters_nulls_and_handles_dst(self) -> None:
-        # Finnish autumn DST transition: 2026-10-25 has 03:00+03:00 AND 03:00+02:00
+        # Finnish autumn DST transition: 2026-10-25 with explicit +03:00 and +02:00
         readings = [
             {"time": "2026-10-25T03:00:00+03:00", "value": 0.25, "status": "Mitattu"},
             {"time": "2026-10-25T03:15:00+03:00", "value": 0.25, "status": "Mitattu"},
@@ -189,6 +189,190 @@ class TestOmaWattiParsing(unittest.TestCase):
         self.assertAlmostEqual(hourly[0].value, 1.0)
         self.assertEqual(hourly[1].start, datetime(2026, 10, 25, 1, 0, tzinfo=UTC))
         self.assertAlmostEqual(hourly[1].value, 2.0)
+
+    def test_dst_fall_back_duplicate_offset_hourly_electricity(self) -> None:
+        # OmaWatti API bug (issue #1): both 03:00 hours labeled +02:00
+        readings = [
+            {"time": "2026-10-25T00:00:00+03:00", "value": 0.65},
+            {"time": "2026-10-25T01:00:00+03:00", "value": 1.92},
+            {"time": "2026-10-25T02:00:00+03:00", "value": 5.18},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 9.14},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 10.51},
+            {"time": "2026-10-25T04:00:00+02:00", "value": 11.05},
+        ]
+
+        hourly = api.aggregate_quarterly_to_hourly(readings)
+        self.assertEqual(
+            [(p.start, p.value) for p in hourly],
+            [
+                (datetime(2026, 10, 24, 21, 0, tzinfo=UTC), 0.65),
+                (datetime(2026, 10, 24, 22, 0, tzinfo=UTC), 1.92),
+                (datetime(2026, 10, 24, 23, 0, tzinfo=UTC), 5.18),
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 9.14),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 10.51),
+                (datetime(2026, 10, 25, 2, 0, tzinfo=UTC), 11.05),
+            ],
+        )
+
+    def test_dst_fall_back_duplicate_offset_quarterly_and_missing_slot(self) -> None:
+        # 15-min readings where both 03:xx passes carry +02:00, and 03:30 is absent in pass 2
+        readings = [
+            {"time": "2026-10-25T02:45:00+03:00", "value": 1.00},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 2.00},
+            {"time": "2026-10-25T03:15:00+02:00", "value": 2.10},
+            {"time": "2026-10-25T03:30:00+02:00", "value": 2.20},
+            {"time": "2026-10-25T03:45:00+02:00", "value": 2.30},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 3.00},
+            {"time": "2026-10-25T03:15:00+02:00", "value": 3.10},
+            {"time": "2026-10-25T03:45:00+02:00", "value": 3.30},
+            {"time": "2026-10-25T04:00:00+02:00", "value": 4.00},
+        ]
+
+        hourly = api.aggregate_quarterly_to_hourly(readings)
+        self.assertEqual(
+            [(p.start, p.value) for p in hourly],
+            [
+                (datetime(2026, 10, 24, 23, 0, tzinfo=UTC), 1.00),
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 8.60),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 9.40),
+                (datetime(2026, 10, 25, 2, 0, tzinfo=UTC), 4.00),
+            ],
+        )
+
+    def test_dst_fall_back_duplicate_offset_heating_and_delta_t(self) -> None:
+        raw_energy = [
+            {"time": "2026-10-25T02:00:00+03:00", "value": 0.001},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 0.002},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 0.003},
+            {"time": "2026-10-25T04:00:00+02:00", "value": 0.004},
+        ]
+        energy = api.parse_hourly_readings(raw_energy, multiplier=1000.0)
+        self.assertEqual(
+            [(p.start, p.value) for p in energy],
+            [
+                (datetime(2026, 10, 24, 23, 0, tzinfo=UTC), 1.0),
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 2.0),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 3.0),
+                (datetime(2026, 10, 25, 2, 0, tzinfo=UTC), 4.0),
+            ],
+        )
+
+        raw_in = [
+            {"time": "2026-10-25T03:00:00+02:00", "value": 60.0},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 67.0},
+        ]
+        raw_out = [
+            {"time": "2026-10-25T03:00:00+02:00", "value": 24.0},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 25.0},
+        ]
+        delta_t = api.compute_delta_t(
+            api.parse_hourly_readings(raw_in),
+            api.parse_hourly_readings(raw_out),
+        )
+        self.assertEqual(
+            [(p.start, p.value) for p in delta_t],
+            [
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 36.0),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 42.0),
+            ],
+        )
+
+    def test_dst_fall_back_edge_cases_nulls_multi_year_spring_and_non_dst(self) -> None:
+        # Null second pass preserves first pass at 00:00Z
+        partial = [
+            {"time": "2026-10-25T02:00:00+03:00", "value": 5.0},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 9.0},
+            {"time": "2026-10-25T03:00:00+02:00", "value": None},
+        ]
+        self.assertEqual(
+            [(p.start, p.value) for p in api.parse_hourly_readings(partial)],
+            [
+                (datetime(2026, 10, 24, 23, 0, tzinfo=UTC), 5.0),
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 9.0),
+            ],
+        )
+
+        # Multi-year backfill (2025 + 2026) disambiguates each autumn independently
+        multi_year = [
+            {"time": "2025-10-26T03:00:00+02:00", "value": 1.1},
+            {"time": "2025-10-26T03:00:00+02:00", "value": 1.2},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 2.1},
+            {"time": "2026-10-25T03:00:00+02:00", "value": 2.2},
+        ]
+        self.assertEqual(
+            [(p.start, p.value) for p in api.aggregate_quarterly_to_hourly(multi_year)],
+            [
+                (datetime(2025, 10, 26, 0, 0, tzinfo=UTC), 1.1),
+                (datetime(2025, 10, 26, 1, 0, tzinfo=UTC), 1.2),
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 2.1),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 2.2),
+            ],
+        )
+
+        # Duplicate +03:00 offsets also disambiguate cleanly to 00:00Z and 01:00Z
+        dup_summer = [
+            {"time": "2026-10-25T03:00:00+03:00", "value": 3.1},
+            {"time": "2026-10-25T03:00:00+03:00", "value": 3.2},
+        ]
+        self.assertEqual(
+            [(p.start, p.value) for p in api.parse_hourly_readings(dup_summer)],
+            [
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 3.1),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 3.2),
+            ],
+        )
+
+        # Isolated single 03:00+02:00 (no wraparound) trusts its explicit offset
+        isolated = [
+            {"time": "2026-10-25T03:00:00+02:00", "value": 4.0},
+            {"time": "2026-10-25T04:00:00+02:00", "value": 5.0},
+        ]
+        self.assertEqual(
+            [(p.start, p.value) for p in api.parse_hourly_readings(isolated)],
+            [
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 4.0),
+                (datetime(2026, 10, 25, 2, 0, tzinfo=UTC), 5.0),
+            ],
+        )
+
+        # Non-DST duplicate must NEVER be shifted back by 1 hour
+        non_dst_dup = [
+            {"time": "2026-01-01T00:00:00+02:00", "value": 1.0},
+            {"time": "2026-01-01T00:00:00+02:00", "value": 2.0},
+        ]
+        self.assertEqual(
+            [(p.start, p.value) for p in api.parse_hourly_readings(non_dst_dup)],
+            [(datetime(2025, 12, 31, 22, 0, tzinfo=UTC), 2.0)],
+        )
+
+        # Spring forward (2026-03-29: 02:00+02:00 -> 04:00+03:00) stays untouched
+        spring = [
+            {"time": "2026-03-29T02:00:00+02:00", "value": 1.5},
+            {"time": "2026-03-29T04:00:00+03:00", "value": 2.5},
+        ]
+        self.assertEqual(
+            [(p.start, p.value) for p in api.aggregate_quarterly_to_hourly(spring)],
+            [
+                (datetime(2026, 3, 29, 0, 0, tzinfo=UTC), 1.5),
+                (datetime(2026, 3, 29, 1, 0, tzinfo=UTC), 2.5),
+            ],
+        )
+
+        # Fallback without ZoneInfo (fixed UTC+2 tzinfo) still disambiguates Oct fall-back
+        resolved_fallback = api._resolve_reading_utc_hours(
+            [
+                {"time": "2026-10-25T03:00:00+02:00", "value": 9.14},
+                {"time": "2026-10-25T03:00:00+02:00", "value": 10.51},
+            ],
+            local_tz=timezone(timedelta(hours=2)),
+        )
+        self.assertEqual(
+            resolved_fallback,
+            [
+                (datetime(2026, 10, 25, 0, 0, tzinfo=UTC), 9.14),
+                (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 10.51),
+            ],
+        )
 
     def test_heat_mwh_to_kwh_and_delta_t(self) -> None:
         raw_energy = [

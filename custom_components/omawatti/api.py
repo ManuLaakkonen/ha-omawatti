@@ -206,17 +206,138 @@ def parse_active_contracts(
     return results
 
 
-def _parse_utc_hour(time_str: str) -> datetime | None:
-    """Parse an OmaWatti ISO timestamp and floor it to its UTC hour boundary."""
+def _parse_iso_datetime(time_str: str) -> datetime | None:
+    """Parse an OmaWatti ISO timestamp, returning None on empty/invalid input."""
     if not time_str:
         return None
     try:
-        dt = datetime.fromisoformat(time_str)
+        return datetime.fromisoformat(time_str)
     except ValueError:
         return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=HELSINKI_TZ)
-    return dt.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+
+
+def _ambiguous_fall_back_utc_hours(
+    naive_hour: datetime,
+    local_tz: tzinfo = HELSINKI_TZ,
+) -> tuple[datetime, datetime, timedelta, timedelta] | None:
+    """Return (first_utc_hour, second_utc_hour, first_offset, second_offset)
+    if `naive_hour` is a DST fall-back ambiguous local hour, otherwise None.
+    """
+    dt0 = naive_hour.replace(tzinfo=local_tz, fold=0)
+    dt1 = naive_hour.replace(tzinfo=local_tz, fold=1)
+    o0 = dt0.utcoffset()
+    o1 = dt1.utcoffset()
+    if o0 is not None and o1 is not None and o0 > o1:
+        return (
+            dt0.astimezone(UTC).replace(minute=0, second=0, microsecond=0),
+            dt1.astimezone(UTC).replace(minute=0, second=0, microsecond=0),
+            o0,
+            o1,
+        )
+    # Fallback on minimal Windows Python without tzdata (fixed UTC+2 HELSINKI_TZ):
+    # Finland (EU) DST fall-back is the last Sunday of October at 03:00-03:59.
+    if not isinstance(local_tz, ZoneInfo):
+        if (
+            naive_hour.month == 10
+            and naive_hour.weekday() == 6
+            and naive_hour.day >= 25
+            and naive_hour.hour == 3
+        ):
+            o0 = timedelta(hours=3)
+            o1 = timedelta(hours=2)
+            return (
+                naive_hour.replace(tzinfo=timezone(o0))
+                .astimezone(UTC)
+                .replace(minute=0, second=0, microsecond=0),
+                naive_hour.replace(tzinfo=timezone(o1))
+                .astimezone(UTC)
+                .replace(minute=0, second=0, microsecond=0),
+                o0,
+                o1,
+            )
+    return None
+
+
+def _resolve_reading_utc_hours(
+    readings: list[dict[str, Any]],
+    *,
+    local_tz: tzinfo = HELSINKI_TZ,
+) -> list[tuple[datetime, Any]]:
+    """Resolve raw OmaWatti reading timestamps to UTC hour boundaries.
+
+    Preserves `value: null` rows during timestamp resolution so positional order
+    across DST fall-back transitions remains intact. When the OmaWatti API tags
+    both passes of an ambiguous autumn DST hour with the same offset (e.g.
+    `03:00+02:00` twice, hourly or 15-min), the first pass is assigned to
+    summer time (`fold=0`) and the second pass to standard time (`fold=1`).
+    """
+    parsed: list[tuple[datetime, Any]] = []
+    for row in readings:
+        dt = _parse_iso_datetime(str(row.get("time") or ""))
+        if dt is None:
+            continue
+        parsed.append((dt, row.get("value")))
+
+    resolved_hours: list[datetime] = [
+        (dt if dt.tzinfo is not None else dt.replace(tzinfo=local_tz))
+        .astimezone(UTC)
+        .replace(minute=0, second=0, microsecond=0)
+        for dt, _ in parsed
+    ]
+
+    hour_cache: dict[
+        datetime, tuple[datetime, datetime, timedelta, timedelta] | None
+    ] = {}
+    ambiguous_groups: dict[
+        datetime,
+        tuple[tuple[datetime, datetime, timedelta, timedelta], list[int]],
+    ] = {}
+
+    for idx, (dt, _) in enumerate(parsed):
+        naive_hour = dt.replace(tzinfo=None, minute=0, second=0, microsecond=0)
+        if naive_hour not in hour_cache:
+            hour_cache[naive_hour] = _ambiguous_fall_back_utc_hours(
+                naive_hour, local_tz
+            )
+        pair = hour_cache[naive_hour]
+        if pair is None:
+            continue
+        _, _, o0, o1 = pair
+        if dt.utcoffset() not in (None, o0, o1):
+            continue
+        group = ambiguous_groups.get(naive_hour)
+        if group is None:
+            ambiguous_groups[naive_hour] = (pair, [idx])
+        else:
+            group[1].append(idx)
+
+    for (first_utc_hour, second_utc_hour, _, _), indices in ambiguous_groups.values():
+        if len(indices) < 2:
+            continue
+        # Trust the API if it already distinguished the two passes with distinct offsets.
+        offsets = {parsed[i][0].utcoffset() for i in indices}
+        if len(offsets) > 1:
+            continue
+
+        # Detect transition from pass 0 (summer) to pass 1 (winter) when local wall
+        # time repeats or wraps backwards (e.g. 03:00 -> 03:00 or 03:45 -> 03:00).
+        passes: list[int] = []
+        current_pass = 0
+        prev_naive: datetime | None = None
+        for i in indices:
+            cur_naive = parsed[i][0].replace(tzinfo=None)
+            if prev_naive is not None and cur_naive <= prev_naive:
+                current_pass = 1
+            passes.append(current_pass)
+            prev_naive = cur_naive
+
+        if current_pass == 0:
+            continue
+
+        for i, pass_idx in zip(indices, passes):
+            resolved_hours[i] = first_utc_hour if pass_idx == 0 else second_utc_hour
+
+    return [(hour_utc, raw_val) for hour_utc, (_, raw_val) in zip(resolved_hours, parsed)]
 
 
 def _parse_numeric_value(raw_val: Any) -> float | None:
@@ -236,20 +357,17 @@ def aggregate_quarterly_to_hourly(
     *,
     multiplier: float = 1.0,
 ) -> list[HourlyPoint]:
-    """Sum 15-minute electricity readings into UTC-aligned hourly totals.
+    """Sum 15-minute or hourly electricity readings into UTC-aligned hourly totals.
 
-    Skips unmeasured future slots (`value: null`). Because timestamps include
-    explicit timezone offsets (+02:00 / +03:00), DST transitions produce
-    distinct UTC hours with zero overlap.
+    Skips unmeasured future slots (`value: null`) after resolving timestamps so
+    autumn DST fall-back hours with duplicate offsets stay split across their
+    two distinct UTC hours.
     """
     buckets: dict[datetime, float] = defaultdict(float)
 
-    for row in readings:
-        val = _parse_numeric_value(row.get("value"))
+    for hour_utc, raw_val in _resolve_reading_utc_hours(readings):
+        val = _parse_numeric_value(raw_val)
         if val is None:
-            continue
-        hour_utc = _parse_utc_hour(str(row.get("time") or ""))
-        if hour_utc is None:
             continue
         buckets[hour_utc] += val * multiplier
 
@@ -264,15 +382,16 @@ def parse_hourly_readings(
     *,
     multiplier: float = 1.0,
 ) -> list[HourlyPoint]:
-    """Parse hourly OmaWatti readings into UTC-aligned points, skipping nulls."""
+    """Parse hourly OmaWatti readings into UTC-aligned points, skipping nulls.
+
+    Disambiguates autumn DST fall-back hours when the API emits duplicate offsets
+    for both passes of the repeated local hour.
+    """
     points_by_hour: dict[datetime, float] = {}
 
-    for row in readings:
-        val = _parse_numeric_value(row.get("value"))
+    for hour_utc, raw_val in _resolve_reading_utc_hours(readings):
+        val = _parse_numeric_value(raw_val)
         if val is None:
-            continue
-        hour_utc = _parse_utc_hour(str(row.get("time") or ""))
-        if hour_utc is None:
             continue
         points_by_hour[hour_utc] = round(val * multiplier, 6)
 
